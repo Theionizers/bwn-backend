@@ -98,3 +98,83 @@ async def update_business(
         )
 
     return {"message": "Business updated successfully"}
+
+@router.delete("/{business_id}")
+async def delete_business(
+    business_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+
+    result = await database["businesses"].delete_one({
+        "_id": ObjectId(business_id),
+        "owner_id": current_user["_id"],
+    })
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    return {"message": "Business deleted successfully"}
+
+@router.get("/search")
+async def search_businesses(
+    q: str | None = None,
+    category: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    page: int = 1,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    if page < 1 or limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid pagination parameters",
+        )
+
+    filters = {
+        "status": "active",
+        "is_verified": True,
+    }
+
+    if q:
+        filters["name"] = {"$regex": q, "$options": "i"}
+
+    if category:
+        filters["category"] = category
+
+    if city:
+        filters["city"] = {"$regex": f"^{city}$", "$options": "i"}
+
+    if state:
+        filters["state"] = {"$regex": f"^{state}$", "$options": "i"}
+
+    database = get_database()
+    collection = database["businesses"]
+
+    skip = (page - 1) * limit
+
+    cursor = collection.find(filters).skip(skip).limit(limit)
+    businesses = await cursor.to_list(length=limit)
+
+    total = await collection.count_documents(filters)
+
+    for business in businesses:
+        business["id"] = str(business.pop("_id"))
+        business["owner_id"] = str(business["owner_id"])
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "businesses": businesses,
+    }
