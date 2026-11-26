@@ -8,6 +8,7 @@ from app.dependencies.roles import require_role
 from app.db.mongodb import get_database
 from app.dependencies.auth import get_current_user
 from app.schemas.business import BusinessCreate
+from app.schemas.business import BusinessSocialLinks
 from fastapi import Body
 from app.services.file_service import (
     save_business_image,
@@ -488,8 +489,10 @@ async def get_business_profile_completeness(
         "address",
         "city",
         "state",
+        "logo",
+        "cover_image",
+        "social_links",
     ]
-
     results = []
 
     for business in businesses:
@@ -615,3 +618,49 @@ async def delete_business_cover(
     delete_business_image(old_cover)
 
     return {"message": "Business cover image deleted successfully"}
+
+
+@router.put("/{business_id}/social-links")
+async def update_business_social_links(
+    business_id: str,
+    social_links: BusinessSocialLinks,
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+    businesses = database["businesses"]
+
+    result = await businesses.update_one(
+        {
+            "_id": ObjectId(business_id),
+            "owner_id": current_user["_id"],
+        },
+        {
+            "$set": {
+                "social_links": social_links.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    return {
+        "message": "Business social links updated successfully",
+        "social_links": social_links.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
+    }

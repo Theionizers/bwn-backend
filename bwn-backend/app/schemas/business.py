@@ -1,3 +1,4 @@
+from pydantic import BaseModel, HttpUrl
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -17,3 +18,13 @@ class BusinessCreate(BaseModel):
     state: str
     country: str = "India"
     pincode: Optional[str] = None
+
+
+
+
+
+class BusinessSocialLinks(BaseModel):
+    linkedin: HttpUrl | None = None
+    instagram: HttpUrl | None = None
+    facebook: HttpUrl | None = None
+    youtube: HttpUrl | None = None
