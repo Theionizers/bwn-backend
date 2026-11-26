@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-
+from app.services.file_service import save_business_image
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pymongo.errors import DuplicateKeyError
@@ -9,6 +9,11 @@ from app.db.mongodb import get_database
 from app.dependencies.auth import get_current_user
 from app.schemas.business import BusinessCreate
 from fastapi import Body
+from app.services.file_service import (
+    save_business_image,
+    delete_business_image,
+)
+from fastapi import APIRouter, Depends, HTTPException, status, Body, File, UploadFile
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 
 
@@ -36,6 +41,121 @@ async def create_business(
         "business_id": str(result.inserted_id),
     }
 
+
+@router.post("/{business_id}/logo")
+async def upload_business_logo(
+    business_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+    businesses = database["businesses"]
+
+    business = await businesses.find_one({
+        "_id": ObjectId(business_id),
+        "owner_id": current_user["_id"],
+    })
+
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    image_path = await save_business_image(file)
+
+    old_logo = business.get("logo")
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$set": {
+                "logo": image_path,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    delete_business_image(old_logo)
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$set": {
+                "logo": image_path,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    return {
+        "message": "Business logo uploaded successfully",
+        "logo": image_path,
+    }
+
+
+@router.post("/{business_id}/cover")
+async def upload_business_cover(
+    business_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+    businesses = database["businesses"]
+
+    business = await businesses.find_one({
+        "_id": ObjectId(business_id),
+        "owner_id": current_user["_id"],
+    })
+
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    image_path = await save_business_image(file)
+
+    old_cover = business.get("cover_image")
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$set": {
+                "cover_image": image_path,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    delete_business_image(old_cover)
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$set": {
+                "cover_image": image_path,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    return {
+        "message": "Business cover image uploaded successfully",
+        "cover_image": image_path,
+    }
 
 
 @router.get("/{business_id}")
@@ -405,3 +525,93 @@ async def get_business_profile_completeness(
         "total_businesses": len(results),
         "businesses": results,
     }
+
+@router.delete("/{business_id}/logo")
+async def delete_business_logo(
+    business_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+    businesses = database["businesses"]
+
+    business = await businesses.find_one({
+        "_id": ObjectId(business_id),
+        "owner_id": current_user["_id"],
+    })
+
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    old_logo = business.get("logo")
+
+    if not old_logo:
+        raise HTTPException(
+            status_code=404,
+            detail="Business logo not found",
+        )
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$unset": {"logo": ""},
+            "$set": {"updated_at": datetime.now(timezone.utc)},
+        },
+    )
+
+    delete_business_image(old_logo)
+
+    return {"message": "Business logo deleted successfully"}
+
+@router.delete("/{business_id}/cover")
+async def delete_business_cover(
+    business_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
+    database = get_database()
+    businesses = database["businesses"]
+
+    business = await businesses.find_one({
+        "_id": ObjectId(business_id),
+        "owner_id": current_user["_id"],
+    })
+
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found or you do not own it",
+        )
+
+    old_cover = business.get("cover_image")
+
+    if not old_cover:
+        raise HTTPException(
+            status_code=404,
+            detail="Business cover image not found",
+        )
+
+    await businesses.update_one(
+        {"_id": ObjectId(business_id)},
+        {
+            "$unset": {"cover_image": ""},
+            "$set": {"updated_at": datetime.now(timezone.utc)},
+        },
+    )
+
+    delete_business_image(old_cover)
+
+    return {"message": "Business cover image deleted successfully"}

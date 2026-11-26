@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.api.v1.router import api_router
 from fastapi import Request
 from fastapi.responses import JSONResponse
-
+from fastapi.staticfiles import StaticFiles
 from app.core.exceptions import AppException
 
 from app.db.mongodb import (
@@ -31,10 +31,15 @@ async def lifespan(app: FastAPI):
     await close_mongodb_connection()
     print("MongoDB connection closed")
 
-
 app = FastAPI(
     title=settings.APP_NAME,
     lifespan=lifespan,
+)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory="uploads"),
+    name="uploads",
 )
 
 @app.exception_handler(AppException)
