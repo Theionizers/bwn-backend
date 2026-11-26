@@ -37,24 +37,48 @@ async def create_business(
     }
 
 
-@router.get("/pending")
-async def get_pending_businesses(
-    admin: dict = Depends(require_role("admin")),
+
+@router.get("/{business_id}")
+async def get_business(
+    business_id: str,
+    current_user: dict = Depends(get_current_user),
 ):
+    if not ObjectId.is_valid(business_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid business ID",
+        )
+
     database = get_database()
 
-    businesses = await database["businesses"].find(
-        {"status": "pending"}
-    ).to_list(length=100)
+    business = await database["businesses"].find_one({
+        "_id": ObjectId(business_id)
+    })
 
-    for business in businesses:
-        business["_id"] = str(business["_id"])
-        business["owner_id"] = str(business["owner_id"])
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found",
+        )
 
-    return {
-        "total": len(businesses),
-        "businesses": businesses,
-    }
+    is_owner = business["owner_id"] == current_user["_id"]
+    is_admin = current_user.get("role") == "admin"
+    is_public = (
+        business.get("status") == "active"
+        and business.get("is_verified") is True
+    )
+
+    if not (is_owner or is_admin or is_public):
+        raise HTTPException(
+            status_code=404,
+            detail="Business not found",
+        )
+
+    business["id"] = str(business.pop("_id"))
+    business["owner_id"] = str(business["owner_id"])
+
+    return business
+
 
 
 @router.get("/me")
@@ -316,4 +340,68 @@ async def get_all_businesses(
         "page": page,
         "limit": limit,
         "businesses": businesses,
+    }
+
+@router.get("/me/completeness")
+async def get_business_profile_completeness(
+    current_user: dict = Depends(get_current_user),
+):
+    database = get_database()
+
+    businesses = await database["businesses"].find(
+        {"owner_id": current_user["_id"]}
+    ).to_list(length=100)
+
+    if not businesses:
+        raise HTTPException(
+            status_code=404,
+            detail="No business found. Create a business profile first.",
+        )
+
+    required_fields = [
+        "name",
+        "description",
+        "category",
+        "phone",
+        "email",
+        "website",
+        "address",
+        "city",
+        "state",
+    ]
+
+    results = []
+
+    for business in businesses:
+        completed_fields = [
+            field
+            for field in required_fields
+            if business.get(field) is not None
+            and str(business.get(field)).strip() != ""
+        ]
+
+        missing_fields = [
+            field
+            for field in required_fields
+            if field not in completed_fields
+        ]
+
+        total_fields = len(required_fields)
+        completed_count = len(completed_fields)
+
+        percentage = round(
+            (completed_count / total_fields) * 100
+        )
+
+        results.append({
+            "business_id": str(business["_id"]),
+            "business_name": business["name"],
+            "completion_percentage": percentage,
+            "completed_fields": completed_fields,
+            "missing_fields": missing_fields,
+        })
+
+    return {
+        "total_businesses": len(results),
+        "businesses": results,
     }
